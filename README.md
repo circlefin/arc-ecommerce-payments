@@ -40,7 +40,7 @@ The escrow and its ERC-3009 token collector are not natively deployed on Arc Tes
 
 1. Clone the repository and install dependencies:
   ```bash
-   git clone https://github.com/akelani-circle/arc-ecommerce-payments.git
+   git clone https://github.com/circlefin/arc-ecommerce-payments.git
    cd arc-ecommerce-payments
    npm install
   ```
