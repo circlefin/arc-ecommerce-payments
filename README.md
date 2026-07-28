@@ -1,12 +1,16 @@
 # Arc eCommerce Payments
 
-An onchain eCommerce demo on [Circle Arc](https://www.circle.com/arc) that uses the [Commerce Payments Protocol](https://github.com/base/commerce-payments) (Coinbase x Shopify) as its payment processor. Shoppers browse a normal storefront, add items to a cart, connect a wallet, and pay in USDC or EURC. They sign once, never touch gas, and never see a seed phrase or a hex address. Behind that familiar checkout, the protocol's escrow contract recreates the card-network authorize then capture lifecycle on-chain: funds are reserved at checkout and only captured when the merchant fulfills the order.
+An onchain e-commerce sample app built on [Arc](https://arc.io/) using the [Commerce Payments Protocol](https://github.com/base/commerce-payments), developed by Coinbase and Shopify, to process payments in USDC and EURC.
 
-A single token transfer cannot express what real commerce needs, reserving funds at checkout, capturing when an order ships, partial captures, voids, and refunds. The Commerce Payments Protocol solves this by placing an escrow between the payer and the merchant. This app demonstrates all six of its operations (authorize, capture, charge, void, reclaim, refund) across both currencies, with an operator service that sponsors gas so the shopper pays nothing beyond the purchase itself.
+Shoppers can browse a standard storefront, add items to a cart, connect a wallet, and complete checkout with a single signature. An operator service sponsors gas, so the shopper pays only the purchase amount.
 
-The escrow and its ERC-3009 token collector are not natively deployed on Arc Testnet, so `npm run setup` bootstraps them through Circle's [Smart Contract Platform](https://developers.circle.com/contracts). One command provisions the operator and merchant wallets, deploys both pinned contracts, and writes the wallet and contract addresses back into your environment.
+Behind the checkout experience, the Commerce Payments Protocol uses escrow contracts to support the payment lifecycle required by real-world commerce. Instead of transferring funds directly to the merchant at checkout, the protocol can authorize a payment by reserving funds and capture them later when the merchant fulfills the order.
 
+This model supports workflows that a simple token transfer cannot, including partial captures, voids, reclaims, and refunds. The app demonstrates all six protocol operations—`authorize`, `capture`, `charge`, `void`, `reclaim`, and `refund`—with both USDC and EURC.
 
+Because the protocol’s escrow contract and ERC-3009 token collector are not deployed on Arc Testnet by default, the project includes an automated setup flow using Circle’s [Smart Contract Platform](https://developers.circle.com/contracts).
+
+Running `npm run setup` provisions the operator and merchant wallets, deploys pinned versions of the required contracts, and writes the resulting wallet and contract addresses to the local environment.
 
 ## Table of Contents
 
