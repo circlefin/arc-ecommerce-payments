@@ -40,7 +40,7 @@ The escrow and its ERC-3009 token collector are not natively deployed on Arc Tes
 
 1. Clone the repository and install dependencies:
   ```bash
-   git clone https://github.com/akelani-circle/arc-ecommerce-payments.git
+   git clone https://github.com/circlefin/arc-ecommerce-payments.git
    cd arc-ecommerce-payments
    npm install
   ```
@@ -58,9 +58,9 @@ The escrow and its ERC-3009 token collector are not natively deployed on Arc Tes
   1. Ensures the three Developer-Controlled wallets the store needs - **deployer**, **operator** (submits + sponsors gas), and **merchant** (funds receiver) - creating any that are missing and writing their ids/addresses to `.env.local` so reruns reuse them.
   2. Deploys `AuthCaptureEscrow` (no constructor args, deploys its own `TokenStore`) and `ERC3009PaymentCollector` (escrow + Multicall3 addresses) via the Smart Contract Platform, then writes `NEXT_PUBLIC_ESCROW_ADDRESS` and `NEXT_PUBLIC_TOKEN_COLLECTOR_ADDRESS` back. Skipped if both are already set.
   3. Seeds the operator with a little Arc gas (USDC) from the deployer, since the operator pays for every checkout transaction.
-    cause Arc uses USDC as native gas, the deployer must hold some before contracts can deploy. If it is empty the script prints its address and the [faucet](https://faucet.circle.com) link, then exits - fund it and re-run. To deploy a fresh pair of contracts, force it:
-    `bash m run setup -- --force` 
-    The protocol source is pinned to a specific commit and compiled with the Cancun EVM target. Arc Testnet runs a newer hardfork, so no source changes are needed. Provenance and the compatibility notes live in `[contracts/README.md](contracts/README.md)`.
+    Because Arc uses USDC as native gas, the deployer must hold some before contracts can deploy. If it is empty the script prints its address and the [faucet](https://faucet.circle.com) link, then exits - fund it and re-run. To deploy a fresh pair of contracts, force it:
+    `npm run setup -- --force`
+    The protocol source is pinned to a specific commit and compiled with the Cancun EVM target. Arc Testnet runs a newer hardfork, so no source changes are needed. Provenance and the compatibility notes live in [contracts/README.md](contracts/README.md).
 4. Start the development server:
   ```bash
    npm run dev
@@ -92,9 +92,9 @@ The token collector is the piece that pulls funds into escrow. This app uses the
 
 | Contract                  | Address                                                                                                                        | Purpose                                                                              |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| `AuthCaptureEscrow`       | `[0xa5b4fa1890619cf03b8d6b11e0c680345b1881d8](https://testnet.arcscan.app/address/0xa5b4fa1890619cf03b8d6b11e0c680345b1881d8)` | The escrow that holds reserved funds and releases them on capture                    |
-| `ERC3009PaymentCollector` | `[0x01e39d4a0b8ffeac8ae1618dbf316d15a8ee867c](https://testnet.arcscan.app/address/0x01e39d4a0b8ffeac8ae1618dbf316d15a8ee867c)` | Pulls USDC/EURC into escrow from the shopper's signed ERC-3009 authorization         |
-| Multicall3                | `[0xcA11bde05977b3631167028862bE2a173976CA11](https://testnet.arcscan.app/address/0xcA11bde05977b3631167028862bE2a173976CA11)` | Canonical helper, a constructor dependency of the collector (already present on Arc) |
+| `AuthCaptureEscrow`       | [`0xa5b4fa1890619cf03b8d6b11e0c680345b1881d8`](https://testnet.arcscan.app/address/0xa5b4fa1890619cf03b8d6b11e0c680345b1881d8) | The escrow that holds reserved funds and releases them on capture                    |
+| `ERC3009PaymentCollector` | [`0x01e39d4a0b8ffeac8ae1618dbf316d15a8ee867c`](https://testnet.arcscan.app/address/0x01e39d4a0b8ffeac8ae1618dbf316d15a8ee867c) | Pulls USDC/EURC into escrow from the shopper's signed ERC-3009 authorization         |
+| Multicall3                | [`0xcA11bde05977b3631167028862bE2a173976CA11`](https://testnet.arcscan.app/address/0xcA11bde05977b3631167028862bE2a173976CA11) | Canonical helper, a constructor dependency of the collector (already present on Arc) |
 
 
 These are the addresses produced by `npm run setup`. Your own deployment will have different addresses, written into `.env.local` and read centrally from `lib/contracts/index.ts`. `npm run setup` also deploys an `OperatorRefundCollector` (pinned to `NEXT_PUBLIC_REFUND_COLLECTOR_ADDRESS`) used by the refund path below.
@@ -325,4 +325,4 @@ Set `WEBHOOK_SECRET=<your-WEBHOOK_SECRET>` in `.env.local`, then uncomment the H
 
 ## **Legal disclaimer**
 
-Sample apps provided for demonstration and educational purposes only, intended for Arc testnet use only, and not production-ready. See ++[Arc.io](http://Arc.io)++ for more.
+Sample apps provided for demonstration and educational purposes only, intended for Arc testnet use only, and not production-ready. See [Arc](https://arc.io) for more.
