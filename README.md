@@ -321,7 +321,7 @@ curl -X POST https://api.circle.com/v1/w3s/contracts/event-monitors \
   }'
 ```
 
-Set `WEBHOOK_SECRET=<your-WEBHOOK_SECRET>` in `.env.local`, then uncomment the HMAC-SHA256 signature verification block at the top of `app/api/webhooks/payments/route.ts`. Circle signs each push request with the shared secret; the handler verifies it before processing.
+Set `WEBHOOK_SECRET=<your-WEBHOOK_SECRET>` in `.env.local`. Circle signs each push request with the shared secret; the handler verifies `x-scp-signature` (HMAC-SHA256) before processing and returns `503` if the secret is unset.
 
 ## **Legal disclaimer**
 
