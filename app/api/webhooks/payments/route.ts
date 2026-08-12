@@ -151,6 +151,41 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
+  // --- Idempotency guard ---
+  // SCP (or any at-least-once delivery system) may redeliver the same event.
+  // Each on-chain event carries a unique transactionHash; if we've already
+  // recorded a lifecycle_events row for this tx + operation, the event was
+  // already applied, so we skip re-patching the order to avoid double-
+  // counting captured_amount / refunded_amount.
+  //
+  // NOTE: this is a best-effort, request-time check. For a hard guarantee
+  // against race conditions from near-simultaneous duplicate deliveries,
+  // pair this with a UNIQUE constraint on lifecycle_events(tx_hash, operation)
+  // at the DB level (tracked as a follow-up migration).
+  const txHash = data?.transactionHash;
+
+  if (txHash) {
+    const { data: existingEvent, error: dupCheckError } = await supabase
+      .from("lifecycle_events")
+      .select("id")
+      .eq("tx_hash", txHash)
+      .eq("operation", eventName)
+      .maybeSingle();
+
+    if (dupCheckError) {
+      console.error(
+        "[webhook] idempotency check failed",
+        dupCheckError.message,
+      );
+    } else if (existingEvent) {
+      console.log(
+        `[webhook] duplicate delivery ignored for tx ${txHash} (${eventName})`,
+      );
+
+      return NextResponse.json({ ok: true, duplicate: true });
+    }
+  }
+
   const amount = toTokenUnits(data?.amount);
 
   const patch: OrderPatch = {};
