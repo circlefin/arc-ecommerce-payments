@@ -26,7 +26,10 @@ export function safeRedirect(
   raw: string | null | undefined,
   fallback = "/account",
 ): string {
-  if (!raw || !raw.startsWith("/")) return fallback;
-  if (raw.startsWith("//") || raw.startsWith("/\\")) return fallback;
-  return raw;
+  if (!raw) return fallback;
+  const cleaned = raw.trim().replace(/[\r\n\t\0]/g, "");
+  if (!cleaned.startsWith("/") || cleaned.startsWith("//") || cleaned.startsWith("/\\")) {
+    return fallback;
+  }
+  return cleaned;
 }
