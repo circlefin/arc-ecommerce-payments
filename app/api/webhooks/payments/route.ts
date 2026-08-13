@@ -18,7 +18,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type ScpEventName =
   | "Authorized"
@@ -76,7 +76,10 @@ function verifyWebhookSignature(
   return timingSafeEqual(receivedBuffer, expectedBuffer);
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
+export async function handleWebhook(
+  req: NextRequest,
+  supabase: SupabaseClient,
+): Promise<Response> {
   const secret = process.env.WEBHOOK_SECRET;
 
   if (!secret) {
@@ -128,7 +131,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     return NextResponse.json({ ok: true });
   }
 
-  const supabase = createServiceClient();
 
   const { data: order, error: fetchError } = await supabase
     .from("orders")
@@ -296,4 +298,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   );
 
   return NextResponse.json({ ok: true });
+}
+
+export async function POST(req: NextRequest): Promise<Response> {
+  const { createServiceClient } = await import("@/lib/supabase/service");
+  return handleWebhook(req, createServiceClient());
 }
