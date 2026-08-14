@@ -153,115 +153,52 @@ export async function handleWebhook(
     );
   }
 
-  // --- Idempotency guard ---
-  // SCP (or any at-least-once delivery system) may redeliver the same event.
-  // Each on-chain event carries a unique transactionHash; if we've already
-  // recorded a lifecycle_events row for this tx + operation, the event was
-  // already applied, so we skip re-patching the order to avoid double-
-  // counting captured_amount / refunded_amount.
-  //
-  // NOTE: this is a best-effort, request-time check. For a hard guarantee
-  // against race conditions from near-simultaneous duplicate deliveries,
-  // pair this with a UNIQUE constraint on lifecycle_events(tx_hash, operation)
-  // at the DB level (tracked as a follow-up migration).
   const txHash = data?.transactionHash;
-
-  if (txHash) {
-    const { data: existingEvent, error: dupCheckError } = await supabase
-      .from("lifecycle_events")
-      .select("id")
-      .eq("tx_hash", txHash)
-      .eq("operation", eventName)
-      .maybeSingle();
-
-    if (dupCheckError) {
-      console.error(
-        "[webhook] idempotency check failed",
-        dupCheckError.message,
-      );
-    } else if (existingEvent) {
-      console.log(
-        `[webhook] duplicate delivery ignored for tx ${txHash} (${eventName})`,
-      );
-
-      return NextResponse.json({ ok: true, duplicate: true });
-    }
-  }
 
   const amount = toTokenUnits(data?.amount);
 
-  const patch: OrderPatch = {};
-  let note: string | null = null;
-
-  switch (eventName) {
-    case "Authorized":
-      patch.status = "Reserved";
-      break;
-
-    case "Charged":
-      patch.status = "Paid";
-
-      if (amount !== undefined) {
-        patch.captured_amount = amount;
-      }
-
-      break;
-
-    case "Captured": {
-      const newCaptured =
-        (order.captured_amount ?? 0) + (amount ?? 0);
-
-      patch.captured_amount = newCaptured;
-
-      if (newCaptured >= order.total - 0.0001) {
-        patch.status = "Paid";
-      } else {
-        note = "partial";
-      }
-
-      break;
-    }
-
-    case "Voided":
-      patch.status = "Canceled";
-      break;
-
-    case "Reclaimed":
-      patch.status = "Expired";
-      break;
-
-    case "Refunded": {
-      const newRefunded =
-        (order.refunded_amount ?? 0) + (amount ?? 0);
-
-      patch.refunded_amount = newRefunded;
-
-      if (
-        newRefunded >=
-        (order.captured_amount ?? order.total) - 0.0001
-      ) {
-        patch.status = "Refunded";
-      } else {
-        note = "partial";
-      }
-
-      break;
-    }
-
-    default:
-      return NextResponse.json({ ok: true });
+  if (!txHash) {
+    return NextResponse.json(
+      { error: "missing transaction hash" },
+      { status: 400 },
+    );
   }
 
-  const { error: updateError } = await supabase
-    .from("orders")
-    .update(patch)
-    .eq("id", order.id);
+  let note: string | null = null;
 
-  if (updateError) {
+  if (eventName === "Captured" || eventName === "Refunded") {
+    const currentAmount = amount ?? 0;
+
+    if (eventName === "Captured") {
+      const newCaptured = (order.captured_amount ?? 0) + currentAmount;
+      note = newCaptured >= order.total - 0.0001 ? null : "partial";
+    } else {
+      const newRefunded = (order.refunded_amount ?? 0) + currentAmount;
+      note =
+        newRefunded >=
+        (order.captured_amount ?? order.total) - 0.0001
+          ? null
+          : "partial";
+    }
+  }
+
+  const { data: processed, error: processError } = await supabase.rpc(
+    "process_webhook_event",
+    {
+      p_order_id: order.id,
+      p_operation: eventName,
+      p_tx_hash: txHash,
+      p_amount: amount ?? null,
+      p_note: note,
+      p_block_number: data.blockNumber ?? null,
+    },
+  );
+
+  if (processError) {
     console.error(
-      "[webhook] update failed",
+      "[webhook] atomic event processing failed",
       order.id,
-      updateError.message,
+      processError.message,
     );
 
     return NextResponse.json(
@@ -270,31 +207,16 @@ export async function handleWebhook(
     );
   }
 
-  if (data?.transactionHash) {
-    const { error: eventError } = await supabase
-      .from("lifecycle_events")
-      .insert({
-        order_id: order.id,
-        operation: eventName,
-        tx_hash: data.transactionHash,
-        amount: amount ?? null,
-        note,
-        block_number: data.blockNumber ?? null,
-      });
+  if (!processed) {
+    console.log(
+      `[webhook] duplicate delivery ignored for tx ${txHash} (${eventName})`,
+    );
 
-    if (eventError) {
-      console.error(
-        "[webhook] lifecycle_events insert failed",
-        eventError.message,
-      );
-    }
+    return NextResponse.json({ ok: true, duplicate: true });
   }
-
   console.log(
-    `[webhook] ${eventName} -> order ${order.id} patched`,
-    patch,
-    "tx:",
-    data?.transactionHash,
+    `[webhook] ${eventName} -> order ${order.id} processed`,
+    { txHash, amount, note },
   );
 
   return NextResponse.json({ ok: true });
