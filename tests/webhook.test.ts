@@ -173,73 +173,40 @@ test("duplicate event is ignored before the order is patched", async () => {
     },
   });
 
-  let orderUpdates = 0;
-  let lifecycleInserts = 0;
+  let rpcCalls = 0;
 
   const supabase = {
     from(table: string) {
-      if (table === "orders") {
-        return {
-          select() {
-            return {
-              filter() {
-                return {
-                  single: async () => ({
-                    data: {
-                      id: "order-1",
-                      status: "Reserved",
-                      total: 1,
-                      currency: "USDC",
-                      captured_amount: 0,
-                      refunded_amount: 0,
-                    },
-                    error: null,
-                  }),
-                };
-              },
-            };
-          },
-
-          update() {
-            orderUpdates += 1;
-
-            return {
-              eq: async () => ({
-                error: null,
-              }),
-            };
-          },
-        };
+      if (table !== "orders") {
+        throw new Error(`Unexpected table: ${table}`);
       }
-      if (table === "lifecycle_events") {
-        return {
-          select() {
-            return {
-              eq() {
-                return {
-                  eq() {
-                    return {
-                      maybeSingle: async () => ({
-                        data: {
-                          id: "existing-event",
-                        },
-                        error: null,
-                      }),
-                    };
+
+      return {
+        select() {
+          return {
+            filter() {
+              return {
+                single: async () => ({
+                  data: {
+                    id: "order-1",
+                    status: "Reserved",
+                    total: 1,
+                    currency: "USDC",
+                    captured_amount: 0,
+                    refunded_amount: 0,
                   },
-                };
-              },
-            };
-          },
+                  error: null,
+                }),
+              };
+            },
+          };
+        },
+      };
+    },
 
-          insert: async () => {
-            lifecycleInserts += 1;
-            return { error: null };
-          },
-        };
-      }
-
-      throw new Error(`Unexpected table: ${table}`);
+    rpc: async () => {
+      rpcCalls += 1;
+      return { data: false, error: null };
     },
   } as never;
 
@@ -249,6 +216,94 @@ test("duplicate event is ignored before the order is patched", async () => {
   );
 
   assert.equal(response.status, 200);
-  assert.equal(orderUpdates, 0);
-  assert.equal(lifecycleInserts, 0);
+  assert.equal(rpcCalls, 1);
+
+  const result = await response.json();
+  assert.equal(result.duplicate, true);
+});
+
+test("concurrent duplicate deliveries are gracefully handled", async () => {
+  process.env.WEBHOOK_SECRET = SECRET;
+
+  const body = JSON.stringify({
+    contractAddress: "0x123",
+    eventName: "Captured",
+    data: {
+      salt: "123",
+      amount: "1000000",
+      transactionHash: "0xconcurrent",
+      blockNumber: 123,
+    },
+  });
+
+  let rpcCalls = 0;
+  let releaseRpc!: () => void;
+
+  const rpcReady = new Promise<void>((resolve) => {
+    releaseRpc = resolve;
+  });
+
+  const supabase = {
+    from(table: string) {
+      if (table !== "orders") {
+        throw new Error(`Unexpected table: ${table}`);
+      }
+
+      return {
+        select() {
+          return {
+            filter() {
+              return {
+                single: async () => ({
+                  data: {
+                    id: "order-1",
+                    status: "Reserved",
+                    total: 1,
+                    currency: "USDC",
+                    captured_amount: 0,
+                    refunded_amount: 0,
+                  },
+                  error: null,
+                }),
+              };
+            },
+          };
+        },
+      };
+    },
+
+    rpc: async () => {
+      const callNumber = ++rpcCalls;
+
+      if (callNumber === 2) {
+        releaseRpc();
+      }
+
+      await rpcReady;
+
+      return {
+        data: callNumber === 1,
+        error: null,
+      };
+    },
+  } as never;
+
+  const [first, second] = await Promise.all([
+    handleWebhook(request(body, sign(body)), supabase),
+    handleWebhook(request(body, sign(body)), supabase),
+  ]);
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(rpcCalls, 2);
+
+  const results = await Promise.all([
+    first.json(),
+    second.json(),
+  ]);
+
+  assert.equal(
+    results.filter((result) => result.duplicate === true).length,
+    1,
+  );
 });
