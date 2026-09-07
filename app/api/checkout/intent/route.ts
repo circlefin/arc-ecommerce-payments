@@ -17,11 +17,12 @@
  */
 
 import { NextResponse } from "next/server";
-import { isAddress, parseUnits, type Address } from "viem";
+import { isAddress, type Address } from "viem";
 import { tokenFor } from "@/lib/arc/tokens";
 import { escrowAddress, tokenCollectorAddress } from "@/lib/contracts";
 import { buildPaymentInfo } from "@/lib/payments/payment-info";
 import { payerAgnosticNonce } from "@/lib/payments/authorization";
+import { parsePositiveTokenAmount } from "@/lib/payments/token-amount";
 import { putIntent, type OrderLineItem } from "@/lib/payments/intent-store";
 import { operatorAddress, merchantReceiver } from "@/lib/operator/config";
 import type { Currency } from "@/lib/products";
@@ -69,8 +70,11 @@ export async function POST(req: Request) {
   if (!payer || !isAddress(payer)) {
     return NextResponse.json({ error: "Invalid payer address" }, { status: 400 });
   }
-  const total = Number(amount);
-  if (!amount || !Number.isFinite(total) || total <= 0) {
+  const token = tokenFor(currency as Currency);
+  const parsedAmount = amount
+    ? parsePositiveTokenAmount(amount, token.decimals)
+    : null;
+  if (!parsedAmount) {
     return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
   }
   const items = parseItems(body.items);
@@ -78,8 +82,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid cart items" }, { status: 400 });
   }
 
-  const token = tokenFor(currency as Currency);
-  const maxAmount = parseUnits(amount, token.decimals);
+  const maxAmount = parsedAmount.units;
 
   const paymentInfo = buildPaymentInfo({
     operator: operatorAddress(),
@@ -93,7 +96,7 @@ export async function POST(req: Request) {
   putIntent(nonce, {
     paymentInfo,
     currency: currency as Currency,
-    total,
+    total: parsedAmount.display,
     items,
   });
 
