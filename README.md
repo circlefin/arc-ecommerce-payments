@@ -44,7 +44,7 @@ Running `npm run setup` provisions the operator and merchant wallets, deploys pi
 
 1. Clone the repository and install dependencies:
   ```bash
-   git clone https://github.com/akelani-circle/arc-ecommerce-payments.git
+   git clone https://github.com/circlefin/arc-ecommerce-payments.git
    cd arc-ecommerce-payments
    npm install
   ```
