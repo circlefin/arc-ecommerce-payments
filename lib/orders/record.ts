@@ -27,10 +27,10 @@ import type { Intent } from "@/lib/payments/intent-store";
 /**
  * Persist a completed checkout to the `orders` table.
  *
- * Called only after the Authorize transaction is confirmed on-chain, so
- * the funds have already moved. Persistence is therefore best-effort: it must
- * never turn a settled payment into a user-facing failure. On any problem it
- * logs and returns null, and the caller falls back to a placeholder reference.
+ * Called only after the Authorize transaction is confirmed on-chain, so the
+ * funds have already moved. If persistence fails, the caller reports that
+ * state explicitly; it must never replace the missing row with a fabricated
+ * order reference.
  *
  * Returns the database-assigned order id (uuid) on success.
  */

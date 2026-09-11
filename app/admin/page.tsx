@@ -26,12 +26,17 @@ export default async function AdminPage() {
   const supabase = await createClient();
 
   // RLS is verified in the layout; the is_admin() policy grants read-all here.
-  const { data: rows } = await supabase
+  const { data: rows, error } = await supabase
     .from("orders")
     .select(
       "id, created_at, status, currency, total, items, payer, operator_fee, net_amount, captured_amount, refunded_amount, payment_info, lifecycle_events(operation, tx_hash, amount, note, created_at)",
     )
     .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[admin] order queue query failed:", error.message);
+    throw new Error("Unable to load the order queue. Please try again later.");
+  }
 
   const orders: Order[] = (rows ?? []).map((row) => {
     const pi = row.payment_info as { authorizationExpiry?: number } | null;

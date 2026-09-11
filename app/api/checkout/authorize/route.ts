@@ -17,7 +17,6 @@
  */
 
 import { NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
 import { isHex, type Hex } from "viem";
 import { authorize } from "@/lib/operator/operations";
 import { takeIntent } from "@/lib/payments/intent-store";
@@ -62,13 +61,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  // Payment is settled on-chain past this point. Persisting the order is
-  // best-effort - a DB failure must not surface as a checkout error, since the
-  // funds have already moved. recordOrder logs and returns null on any problem.
-  // The persisted row's uuid is the order id. If persistence failed (funds
-  // already moved), fall back to a generated uuid so the receipt still has one.
+  // Payment is settled on-chain past this point. A database failure must be
+  // reported explicitly: a generated UUID would not exist in Supabase and
+  // would make the receipt/history misleading. Return the transaction hash so
+  // support can reconcile the settled payment.
   const status = "Reserved";
-  const orderId = (await recordOrder({ intent, status, txHash })) ?? randomUUID();
+  const orderId = await recordOrder({ intent, status, txHash });
+
+  if (!orderId) {
+    return NextResponse.json(
+      {
+        error:
+          "Payment confirmed on-chain, but the order could not be recorded. Save the transaction hash and contact support.",
+        txHash,
+        orderPersisted: false,
+      },
+      { status: 503 },
+    );
+  }
 
   return NextResponse.json({ txHash, orderId, status });
 }
