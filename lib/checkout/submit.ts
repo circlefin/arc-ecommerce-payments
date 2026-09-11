@@ -47,7 +47,9 @@ type SignTypedData = (
 
 async function readError(res: Response, fallback: string): Promise<string> {
   try {
-    return (await res.json()).error ?? fallback;
+    const body = await res.json();
+    const message = body.error ?? fallback;
+    return body.txHash ? `${message} Transaction hash: ${body.txHash}` : message;
   } catch {
     return fallback;
   }

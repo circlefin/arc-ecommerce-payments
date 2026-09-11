@@ -52,12 +52,17 @@ export default async function AccountPage() {
   const { data: { user } } = await supabase.auth.getUser();
 
   // RLS scopes this select to the signed-in shopper's own orders.
-  const { data: rows } = await supabase
+  const { data: rows, error } = await supabase
     .from("orders")
     .select(
       "id, created_at, status, currency, total, items, payment_info, lifecycle_events(operation, tx_hash, amount, note, created_at)",
     )
     .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[account] order history query failed:", error.message);
+    throw new Error("Unable to load order history. Please try again later.");
+  }
 
   // eslint-disable-next-line react-hooks/purity -- async server component, runs once on the server
   const nowSeconds = Math.floor(Date.now() / 1000);

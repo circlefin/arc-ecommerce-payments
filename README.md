@@ -54,18 +54,25 @@ Running `npm run setup` provisions the operator and merchant wallets, deploys pi
   ```
    Open `.env.local` and fill in your Supabase keys, your Circle API key and entity secret, and (optionally) your WalletConnect project ID. The Arc Testnet RPC URL is pre-filled. See [Environment Variables](#environment-variables) for the full list. The wallet IDs and the deployed contract addresses are written automatically by the setup script, so leave those blank.
   > **Register your entity secret first.** Circle's Developer-Controlled Wallets require a one-time entity secret registration before the SDK can sign anything. Follow [the registration guide](https://developers.circle.com/wallets/dev-controlled/register-entity-secret) and store the recovery file **outside** the repository. Set `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET` in `.env.local` afterward.
-3. Set up the onchain side in one command:
+3. Apply the Supabase schema before taking orders. For a hosted Supabase project, install the [Supabase CLI](https://supabase.com/docs/guides/cli), authenticate, and link this checkout to the project that is configured in `.env.local`:
+  ```bash
+   npx supabase login
+   npx supabase link --project-ref YOUR_PROJECT_REF
+   npm run db:remote-status   # review local vs. linked migrations
+   npm run db:push            # applies pending migrations to the linked project
+  ```
+   `YOUR_PROJECT_REF` is the subdomain in `https://YOUR_PROJECT_REF.supabase.co`. The push is intentionally explicit because it changes the hosted database; `npm run setup` only provisions Circle wallets and contracts and never changes Supabase. The CLI may ask for the database password or access token. Review the migrations in `supabase/migrations/` before applying them, and do not commit credentials.
+4. Set up the onchain side in one command:
   ```bash
    npm run setup
   ```
    The setup script (`scripts/setup.ts`) is idempotent end to end:
   1. Ensures the three Developer-Controlled wallets the store needs - **deployer**, **operator** (submits + sponsors gas), and **merchant** (funds receiver) - creating any that are missing and writing their ids/addresses to `.env.local` so reruns reuse them.
   2. Deploys `AuthCaptureEscrow` (no constructor args, deploys its own `TokenStore`) and `ERC3009PaymentCollector` (escrow + Multicall3 addresses) via the Smart Contract Platform, then writes `NEXT_PUBLIC_ESCROW_ADDRESS` and `NEXT_PUBLIC_TOKEN_COLLECTOR_ADDRESS` back. Skipped if both are already set.
-  3. Seeds the operator with a little Arc gas (USDC) from the deployer, since the operator pays for every checkout transaction.
-    cause Arc uses USDC as native gas, the deployer must hold some before contracts can deploy. If it is empty the script prints its address and the [faucet](https://faucet.circle.com) link, then exits - fund it and re-run. To deploy a fresh pair of contracts, force it:
-    `bash m run setup -- --force` 
-    The protocol source is pinned to a specific commit and compiled with the Cancun EVM target. Arc Testnet runs a newer hardfork, so no source changes are needed. Provenance and the compatibility notes live in `[contracts/README.md](contracts/README.md)`.
-4. Start the development server:
+  3. Seeds the operator with a little Arc gas (USDC) from the deployer, since the operator pays for every checkout transaction. Because Arc uses USDC as native gas, the deployer must hold some before contracts can deploy. If it is empty the script prints its address and the [faucet](https://faucet.circle.com) link, then exits - fund it and re-run. To deploy a fresh pair of contracts, force it:
+     `npm run setup -- --force`
+     The protocol source is pinned to a specific commit and compiled with the Cancun EVM target. Arc Testnet runs a newer hardfork, so no source changes are needed. Provenance and the compatibility notes live in `[contracts/README.md](contracts/README.md)`.
+5. Start the development server:
   ```bash
    npm run dev
   ```
@@ -217,7 +224,14 @@ npm run db:start     # start the local stack
 npm run db:status    # print local URLs and keys (use these in .env.local)
 npm run db:stop      # stop the stack
 npm run db:reset     # reset the local database
+npm run db:migrate   # apply local migrations to the local database
 ```
+
+`npm run db:migrate` is local-only (`supabase migration up`). It does not apply
+anything to a hosted project. Use `npm run db:push` after `supabase link` for a
+hosted project, and `npm run db:remote-status` to inspect the linked project's
+migration history. Keep `.env.local` pointed at the same Supabase project whose
+migrations you pushed before starting the app.
 
 
 
