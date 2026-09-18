@@ -60,6 +60,7 @@
  * for when the escrow contract is registered with SCP event monitoring.
  */
 
+import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -111,23 +112,40 @@ function toTokenUnits(raw: string | undefined): number | undefined {
   return Number(raw) / 1_000_000;
 }
 
+function verifyWebhookSignature(
+  rawBody: string,
+  signature: string,
+  secret: string,
+): boolean {
+  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  // timingSafeEqual throws on length mismatch; treat as invalid.
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 // --- Webhook handler ---
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // Signature verification (uncomment once WEBHOOK_SECRET is set in env).
-  // const secret = process.env.WEBHOOK_SECRET;
-  // if (secret) {
-  //   const sig = req.headers.get("x-scp-signature") ?? "";
-  //   const body = await req.text();
-  //   const expected = createHmac("sha256", secret).update(body).digest("hex");
-  //   if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
-  //     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-  //   }
-  // }
+  // Fail closed: this handler uses the service-role Supabase client to mutate
+  // order lifecycle state. Unsigned requests must never reach that path.
+  const secret = process.env.WEBHOOK_SECRET;
+  if (!secret) {
+    return NextResponse.json(
+      { error: "webhook secret not configured" },
+      { status: 503 },
+    );
+  }
+
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-scp-signature") ?? "";
+  if (!verifyWebhookSignature(rawBody, signature, secret)) {
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+  }
 
   let payload: ScpWebhookPayload;
   try {
-    payload = (await req.json()) as ScpWebhookPayload;
+    payload = JSON.parse(rawBody) as ScpWebhookPayload;
   } catch {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
