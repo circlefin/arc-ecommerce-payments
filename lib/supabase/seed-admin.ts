@@ -22,21 +22,43 @@ import { createClient } from "@supabase/supabase-js";
  * Demo admin bootstrap.
  *
  * Runs once on server boot (see `instrumentation.ts`) and guarantees a single
- * admin account exists. Idempotent: creates the user if missing, otherwise just
- * ensures the `admin` role claim is set. Credentials are intentionally hardcoded
- * - this is a demo, and zero-setup matters more than secrecy here.
+ * admin account exists. Idempotent: ensures the `admin` role claim is set on the
+ * configured administrator identity.
+ *
+ * Security note — this function no longer provisions a credential. It previously created
+ * (or reset the role of) `admin@admin.com` with the hardcoded password `123456` on every
+ * server start, from a git-tracked file. That value is public, so every deployment of this
+ * app shipped a known-credential account holding `app_metadata.role === "admin"` — and that
+ * role is the sole gate on `/api/admin/orders/[id]/capture`, `/refund` and `/void`, i.e. the
+ * merchant's funds. Admins must now be provisioned out of band:
+ *
+ *   1. Create the user (Supabase dashboard, CLI, or `auth.admin.inviteUserByEmail`).
+ *   2. Set `app_metadata.role = "admin"` on that user.
+ *   3. Set `ADMIN_EMAIL` in the environment to the same address.
  *
  * Authorization is keyed off `app_metadata.role`, NOT email. `app_metadata` is
  * server-controlled and not user-editable, so it's a real authz boundary. The
  * proxy/middleware reads this same role claim from the JWT to gate `/admin`.
- *
- * Implementation note: we call createUser() first rather than listUsers() to
- * avoid a 502 race that happens when the auth service is still warming up at
- * Next.js startup. createUser() warms the connection; if the user already
- * exists (email_exists / 422) we fall back to listUsers() + updateUserById().
  */
-const ADMIN_EMAIL = "admin@admin.com";
-const ADMIN_PASSWORD = "123456";
+
+/**
+ * Returns the configured administrator email.
+ *
+ * Throws when unset: with no configured identity there is no way to decide who the admin
+ * is, so this must fail loudly rather than silently fall back to a default address.
+ */
+function getAdminEmail(): string {
+  const email = process.env.ADMIN_EMAIL?.trim();
+
+  if (!email) {
+    throw new Error(
+      "[seed-admin] ADMIN_EMAIL is not configured. Provision the administrator out of band " +
+        "and set ADMIN_EMAIL; this module will not create accounts or passwords.",
+    );
+  }
+
+  return email;
+}
 
 export async function seedAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -44,8 +66,8 @@ export async function seedAdmin() {
 
   if (!url || !secretKey) {
     console.warn(
-      "[seed-admin] SUPABASE_SECRET_KEY not set - skipping admin bootstrap. " +
-        "Add it to .env.local (see `supabase status`) to auto-create the admin user.",
+      "[seed-admin] SUPABASE_SECRET_KEY not set - skipping admin role check. " +
+        "Add it to .env.local (see `supabase status`) to verify the admin role claim.",
     );
     return;
   }
@@ -56,44 +78,38 @@ export async function seedAdmin() {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  let adminEmail: string;
   try {
-    const { data: created, error: createError } =
-      await admin.auth.admin.createUser({
-        email: ADMIN_EMAIL,
-        password: ADMIN_PASSWORD,
-        email_confirm: true,
-        app_metadata: { role: "admin" },
-      });
+    adminEmail = getAdminEmail();
+  } catch (err) {
+    // Not fatal: the app still boots, but the misconfiguration must be visible.
+    console.error("[seed-admin]", err instanceof Error ? err.message : String(err));
+    return;
+  }
 
-    if (!createError) {
-      console.log(
-        `[seed-admin] Created admin user ${ADMIN_EMAIL} (id: ${created.user.id}).`,
-      );
-      return;
-    }
-
-    // 422 email_exists means the user is already there — just ensure the role.
-    if (
-      (createError as { code?: string }).code !== "email_exists" &&
-      createError.status !== 422
-    ) {
-      throw createError;
-    }
-
+  try {
+    // Verify the operator-provisioned administrator exists and carries the admin role.
+    // This function never creates a user and never sets a password.
     const { data, error: listError } = await admin.auth.admin.listUsers();
     if (listError) throw listError;
 
-    const existing = data.users.find((u) => u.email === ADMIN_EMAIL);
+    const existing = data.users.find(
+      (u) => u.email?.toLowerCase() === adminEmail.toLowerCase(),
+    );
+
     if (!existing) {
-      // Shouldn't be possible, but guard anyway.
-      throw new Error(`${ADMIN_EMAIL} not found after email_exists conflict`);
+      console.warn(
+        `[seed-admin] No user found for ADMIN_EMAIL=${adminEmail}. ` +
+          "Create and promote the administrator manually; no account was created.",
+      );
+      return;
     }
 
     if (existing.app_metadata?.role !== "admin") {
       await admin.auth.admin.updateUserById(existing.id, {
         app_metadata: { role: "admin" },
       });
-      console.log(`[seed-admin] Promoted ${ADMIN_EMAIL} to admin.`);
+      console.log(`[seed-admin] Granted the admin role to ${adminEmail}.`);
     }
   } catch (err) {
     // Don't crash the server if Supabase is unreachable at boot - the admin
@@ -102,6 +118,6 @@ export async function seedAdmin() {
       err instanceof Error
         ? err.message
         : JSON.stringify(err, Object.getOwnPropertyNames(err as object));
-    console.error("[seed-admin] Failed to bootstrap admin user:", detail);
+    console.error("[seed-admin] Failed to verify the admin user:", detail);
   }
 }

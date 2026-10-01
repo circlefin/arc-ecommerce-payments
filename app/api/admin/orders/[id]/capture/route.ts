@@ -85,17 +85,58 @@ export async function POST(
   );
   const amountUnits = BigInt(Math.round(body.amount * 1_000_000));
 
+  const previouslyCaptured = Number(order.captured_amount);
+  const newCaptured = previouslyCaptured + body.amount;
+  const newStatus =
+    newCaptured >= Number(order.total) - 0.0001 ? "Paid" : "Reserved";
+
+  // Claim the capture before signing.
+  //
+  // Security fix: the `Reserved` precondition lived in application code and the write matched
+  // on `id` alone. Two simultaneous captures both read `captured_amount = 0` and both executed
+  // `escrow.capture` on-chain, but the row ended at `1.0` instead of `2.0` — permanently
+  // under-reporting captured funds and leaving the order re-capturable. The compare-and-swap
+  // below (filtering on the exact `captured_amount` and status just read) lets exactly one
+  // request proceed to a signature.
+  const { data: claimed, error: claimError } = await db
+    .from("orders")
+    .update({ captured_amount: newCaptured, status: newStatus })
+    .eq("id", order.id)
+    .eq("captured_amount", previouslyCaptured)
+    .eq("status", "Reserved")
+    .select("id");
+
+  if (claimError) {
+    console.error("[capture] failed to claim capture for order", order.id, claimError);
+    return NextResponse.json({ error: "Unable to reserve capture" }, { status: 500 });
+  }
+
+  if (!claimed || claimed.length === 0) {
+    console.warn(
+      "[capture] concurrent capture rejected for order",
+      order.id,
+      "— another request already claimed it",
+    );
+    return NextResponse.json(
+      { error: "Order changed while capturing; retry" },
+      { status: 409 },
+    );
+  }
+
   let txHash: string;
   try {
     ({ txHash } = await capture(paymentInfo, amountUnits));
   } catch (err) {
+    // Roll the claim back so the operator can retry without leaving a phantom capture.
+    await db
+      .from("orders")
+      .update({ captured_amount: previouslyCaptured, status: "Reserved" })
+      .eq("id", order.id)
+      .eq("captured_amount", newCaptured);
+
     const message = err instanceof Error ? err.message : "Capture failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }
-
-  const newCaptured = Number(order.captured_amount) + body.amount;
-  const newStatus =
-    newCaptured >= Number(order.total) - 0.0001 ? "Paid" : "Reserved";
 
   // Insert the lifecycle event before the order update commits, so the
   // realtime UPDATE notification (which triggers the client's refetch) never
@@ -107,11 +148,6 @@ export async function POST(
     amount: body.amount,
     note: newStatus === "Reserved" ? "partial" : undefined,
   });
-
-  await db
-    .from("orders")
-    .update({ captured_amount: newCaptured, status: newStatus })
-    .eq("id", order.id);
 
   return NextResponse.json({ txHash, status: newStatus, capturedAmount: newCaptured });
 }

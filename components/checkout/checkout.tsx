@@ -143,8 +143,8 @@ export function Checkout() {
     try {
       const { orderId, status, txHash, explorerUrl } = await submitCheckout({
         currency,
-        // Charge the true cart total in the token's 6-decimal units.
-        amount: total.toFixed(6),
+        // The authorized amount is computed server-side from the product catalog, so the
+        // client total is display-only and is deliberately not sent.
         payer: address,
         items: snapshot.items,
         signTypedDataAsync,
