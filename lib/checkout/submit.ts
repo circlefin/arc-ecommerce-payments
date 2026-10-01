@@ -55,17 +55,14 @@ async function readError(res: Response, fallback: string): Promise<string> {
 
 export async function submitCheckout({
   currency,
-  amount,
   payer,
   items,
   signTypedDataAsync,
   onPhase,
 }: {
   currency: Currency;
-  /** Order total as a decimal string in the token's units. */
-  amount: string;
   payer: Hex;
-  /** Cart line items, persisted with the order for display. */
+  /** Cart line items. Prices are re-derived server-side from the product catalog. */
   items: { name: string; qty: number; price: number }[];
   signTypedDataAsync: SignTypedData;
   onPhase: (phase: CheckoutPhase) => void;
@@ -73,7 +70,10 @@ export async function submitCheckout({
   const intentRes = await fetch("/api/checkout/intent", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ currency, amount, payer, items }),
+    // `amount` is deliberately not sent: the server prices the cart from its own product
+    // catalog (`lib/products.ts`) and recomputes the total, so a client cannot influence the
+    // authorized amount. The response's `value` is authoritative.
+    body: JSON.stringify({ currency, payer, items }),
   });
   if (!intentRes.ok) {
     throw new Error(await readError(intentRes, "Could not start checkout"));

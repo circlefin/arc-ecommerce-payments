@@ -60,6 +60,8 @@
  * for when the escrow contract is registered with SCP event monitoring.
  */
 
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -114,20 +116,54 @@ function toTokenUnits(raw: string | undefined): number | undefined {
 // --- Webhook handler ---
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // Signature verification (uncomment once WEBHOOK_SECRET is set in env).
-  // const secret = process.env.WEBHOOK_SECRET;
-  // if (secret) {
-  //   const sig = req.headers.get("x-scp-signature") ?? "";
-  //   const body = await req.text();
-  //   const expected = createHmac("sha256", secret).update(body).digest("hex");
-  //   if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
-  //     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-  //   }
-  // }
+  // HMAC-SHA256 signature verification.
+  //
+  // Security fix: this block was commented out pending configuration, while `.env.example`
+  // advertised `WEBHOOK_SECRET` and this file's own docs stated the handler "will verify the
+  // HMAC-SHA256 signature once set". With the check absent, any anonymous POST could drive
+  // order state: for example `{"eventName":"Captured","data":{"salt":"<order salt>",
+  // "amount":"9999000000"}}` inflates `captured_amount` to `Paid`, after which
+  // `POST /api/account/orders/[id]/refund` computes `refundable = captured_amount -
+  // refunded_amount` and has the merchant's DCW sign a real ERC-3009 refund of that amount.
+  //
+  // Verification is now mandatory and fails closed: without a configured secret the endpoint
+  // refuses to process rather than trusting every caller. The signature is computed over the
+  // raw body, so `req.json()` below operates on the exact bytes that were authenticated.
+  const secret = process.env.WEBHOOK_SECRET;
+
+  if (!secret) {
+    console.error(
+      "[webhook] WEBHOOK_SECRET is not configured - refusing to process an unverified event",
+    );
+    return NextResponse.json(
+      { error: "webhook not configured" },
+      { status: 503 },
+    );
+  }
+
+  const providedSignature = req.headers.get("x-scp-signature") ?? "";
+  const rawBody = await req.text();
+
+  const expectedSignature = createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+
+  const provided = Buffer.from(providedSignature, "utf8");
+  const expected = Buffer.from(expectedSignature, "utf8");
+
+  // `timingSafeEqual` throws on length mismatch, so compare lengths first; that comparison
+  // leaks only whether the signature was well-formed, which is not sensitive.
+  if (
+    provided.length !== expected.length ||
+    !timingSafeEqual(provided, expected)
+  ) {
+    console.warn("[webhook] rejected an event with an invalid signature");
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+  }
 
   let payload: ScpWebhookPayload;
   try {
-    payload = (await req.json()) as ScpWebhookPayload;
+    payload = JSON.parse(rawBody) as ScpWebhookPayload;
   } catch {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
