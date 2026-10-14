@@ -32,7 +32,7 @@ export const ARC_TESTNET = arcTestnet;
 export const ARC_CHAIN_ID = arcTestnet.id;
 
 export const ARC_RPC_URL =
-  process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.network";
+  process.env.NEXT_PUBLIC_ARC_RPC_URL ?? "https://rpc.testnet.arc.io";
 
 export const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
 
