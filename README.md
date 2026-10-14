@@ -147,7 +147,7 @@ Prices render in the shopper's chosen currency via a toggle, and every order set
 | Field    | Value                                                     |
 | -------- | --------------------------------------------------------- |
 | Chain ID | `5042002` (hex `0x4CEF52`), ships as `arcTestnet` in viem |
-| RPC      | `https://rpc.testnet.arc.network`                         |
+| RPC      | `https://rpc.testnet.arc.io`                         |
 | Explorer | [testnet.arcscan.app](https://testnet.arcscan.app)        |
 | Faucet   | [faucet.circle.com](https://faucet.circle.com)            |
 | USDC     | `0x3600000000000000000000000000000000000000` (6 decimals) |
@@ -196,7 +196,7 @@ All variables live in `.env.local`. The setup script writes the wallet IDs/addre
 | -------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`  | Auth and orders                              | Supabase project settings, or `npm run db:status` for local                  |
 | `SUPABASE_SECRET_KEY`                                                | Admin auto-seed, server only                 | Service-role key. Never expose to the browser                                |
-| `NEXT_PUBLIC_ARC_RPC_URL`                                            | Wallet and reads                             | Defaults to `https://rpc.testnet.arc.network`                                |
+| `NEXT_PUBLIC_ARC_RPC_URL`                                            | Wallet and reads                             | Defaults to `https://rpc.testnet.arc.io`                                |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`                               | RainbowKit QR / mobile                       | [cloud.reown.com](https://cloud.reown.com). Injected wallets work without it |
 | `CIRCLE_API_KEY` / `CIRCLE_ENTITY_SECRET`                            | Operator backend, setup script               | Circle Console. Backend only, never commit                                   |
 | `DEPLOYER_WALLET_SET_ID` / `DEPLOYER_WALLET_ID`                      | Setup script                                 | Written automatically on first setup                                         |
